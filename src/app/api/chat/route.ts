@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
-import { Pinecone } from "@pinecone-database/pinecone";
-import { OpenAI } from "openai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextRequest, NextResponse } from 'next/server';
+import { Pinecone } from '@pinecone-database/pinecone';
+import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Defining systemPrompt
 const systemPrompt = `
-
 You are Guru Nimbus, 
 Your intelligent assistant powered by Retrieval-Augmented Generation (RAG). Please provide your query, and GuruNimbus will generate the optimal result based on its extensive knowledge base.
 
@@ -15,62 +14,60 @@ Your intelligent assistant powered by Retrieval-Augmented Generation (RAG). Plea
 
 **Subject:** [Subject]  
 
-**Review:** [Shot one line Review]  
+**Review:** [Short one line Review]  
 
-**Star:** ⭐(this is a sample star, render the stars of every professor have.)  
+**Star:** ⭐ (this is a sample star, render the stars of every professor have.)  
 *This field shows a star rating for the quality or relevance of the information provided.*
-
 
 Feel free to ask your question, and GuruNimbus will provide a comprehensive and insightful response!
 
 Be polite, clear, and concise in your responses.
 Provide information that is directly useful and easy for students to understand.
-`
-;
-export async function POST(req: { json: () => any; }) {
+`;
+
+export async function POST(req: NextRequest) {
   const data = await req.json();
   const pc = new Pinecone({
     apiKey: process.env.PINECONE_API_KEY || '',
   });
-  const index = pc.Index("rag").namespace("ns1");
+  const index = pc.Index('rag').namespace('ns1');
   const openai = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
+    baseURL: 'https://openrouter.ai/api/v1',
     apiKey: process.env.OPENROUTER_API_KEY,
   });
 
   const text = data[data.length - 1].content;
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-  const Result = await model.embedContent(text);
-  const embeddings = Result.embedding;
+  const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+  const result = await model.embedContent(text);
+  const embeddings = result.embedding;
   const results = await index.query({
     topK: 3,
-    vector: embeddings['values'],
+    vector: embeddings.values,
     includeMetadata: true,
   });
-  
-  let resultString = "\n\nReturned results from vector db {done automatically}";
+
+  let resultString = '\n\nReturned results from vector db {done automatically}';
   results.matches.forEach((match) => {
-    resultString += `\n
+    resultString += `
         Professor: ${match.id}
         Review: ${match.metadata?.review}
         Subject: ${match.metadata?.subject}
         Stars: ${match.metadata?.stars}
-        \n\n`
-        ;
+        \n\n`;
   });
 
   const lastMessage = data[data.length - 1];
   const lastMessageContent = lastMessage.content + resultString;
-  const lastDataWithoutLastMessage = data.slice(0, data.length - 1);
+  const lastDataWithoutLastMessage = data.slice(0, -1);
 
   const completion = await openai.chat.completions.create({
-    model: "meta-llama/llama-3.1-8b-instruct:free",
+    model: 'meta-llama/llama-3.1-8b-instruct:free',
     messages: [
-      { role: "user", content: systemPrompt },
+      { role: 'user', content: systemPrompt },
       ...lastDataWithoutLastMessage,
-      { role: "user", content: lastMessageContent },
+      { role: 'user', content: lastMessageContent },
     ],
     stream: true,
   });
@@ -94,7 +91,5 @@ export async function POST(req: { json: () => any; }) {
     },
   });
 
-
   return new NextResponse(stream);
 }
-
